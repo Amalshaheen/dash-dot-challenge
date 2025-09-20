@@ -238,12 +238,8 @@ const Competition = () => {
     setMorseInput(prev => prev + "-");
   };
 
-  const addSpace = () => {
-    setMorseInput(prev => prev + " ");
-  };
-
-  const clearInput = () => {
-    setMorseInput("");
+  const backspaceInput = () => {
+    setMorseInput(prev => prev.slice(0, -1));
   };
 
   const handleSubmit = async () => {
@@ -421,8 +417,8 @@ const Competition = () => {
               </p>
               <div className="mt-4 p-3 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">
-                  💡 Tip: Use dots (.), dashes (-), and spaces to separate letters. 
-                  Each letter should be separated by a space.
+                  💡 Tip: Use dots (.) and dashes (-) to form morse code. 
+                  Use backspace to correct mistakes.
                 </p>
               </div>
             </CardContent>
@@ -449,7 +445,7 @@ const Competition = () => {
               </div>
 
               {/* Input Buttons */}
-              <div className="grid grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 <Button
                   onClick={addDot}
                   size="lg"
@@ -468,25 +464,17 @@ const Competition = () => {
                   ─
                   <span className="ml-1 sm:ml-2 text-xs sm:text-sm">DASH</span>
                 </Button>
-                <Button
-                  onClick={addSpace}
-                  size="lg"
-                  variant="outline"
-                  className="h-12 sm:h-16 text-sm font-mono terminal-border hover:bg-muted"
-                >
-                  SPACE
-                </Button>
               </div>
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <Button
-                  onClick={clearInput}
-                  variant="destructive"
-                  className="flex-1 font-mono text-sm sm:text-base"
+                  onClick={backspaceInput}
+                  variant="outline"
+                  className="flex-1 font-mono text-sm sm:text-base terminal-border"
                   disabled={!morseInput}
                 >
-                  CLEAR
+                  ⌫ BACKSPACE
                 </Button>
                 <Button
                   onClick={handleSubmit}
