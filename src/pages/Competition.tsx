@@ -222,14 +222,6 @@ export default function Competition() {
       
       <div className="container mx-auto px-4 py-4 sm:py-8">
         <div className="max-w-2xl mx-auto">
-          {/* Storage Status Indicator */}
-          <div className="mb-4 p-2 rounded-lg bg-muted/50 text-center">
-            <span className="text-xs text-muted-foreground font-mono">
-              ☁️ Database Mode | 
-              User: {user?.email?.substring(0, 20)}...
-            </span>
-          </div>
-
           {/* Progress */}
           <div className="mb-6 sm:mb-8">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 space-y-1 sm:space-y-0">

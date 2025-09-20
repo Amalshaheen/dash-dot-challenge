@@ -17,6 +17,8 @@ const Navbar = () => {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<{ display_name: string } | null>(null);
   const { signOut, user } = useAuth();
   const isMobile = useIsMobile();
@@ -56,34 +58,74 @@ const Navbar = () => {
     }
   };
 
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = async (retryCount = 0) => {
     try {
-      const { data, error } = await supabase
-        .from("user_answers")
-        .select(`
-          user_id,
-          is_correct,
-          time_taken_seconds,
-          profiles!inner(display_name)
-        `)
-        .eq("is_correct", true);
+      setIsLeaderboardLoading(true);
+      setLeaderboardError(null);
+      
+      // Use pagination to limit the number of records retrieved in a single query
+      // Start with a reasonable page size
+      const PAGE_SIZE = 100;
+      let page = 0;
+      let hasMoreData = true;
+      let allAnswers: any[] = [];
+      
+      // Fetch data in batches until all data is retrieved
+      while (hasMoreData) {
+        try {
+          const { data, error } = await supabase
+            .from("user_answers")
+            .select(`
+              user_id,
+              is_correct,
+              time_taken_seconds,
+              question_id,
+              profiles!inner(display_name)
+            `)
+            .eq("is_correct", true)
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (error) throw error;
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allAnswers = [...allAnswers, ...data];
+            page++;
+            
+            // If we got fewer results than the page size, we've reached the end
+            if (data.length < PAGE_SIZE) {
+              hasMoreData = false;
+            }
+          } else {
+            hasMoreData = false;
+          }
+        } catch (innerError) {
+          console.error("Error fetching batch of leaderboard data:", innerError);
+          
+          // If we encounter an error in a batch, try to proceed with what we have
+          hasMoreData = false;
+        }
+      }
 
       // Calculate leaderboard scores
-      const userScores: Record<string, { name: string; correct: number; totalTime: number }> = {};
+      const userScores: Record<string, { name: string; correct: number; totalTime: number; questionIds: Set<string> }> = {};
       
-      data?.forEach((answer: any) => {
+      allAnswers.forEach((answer: any) => {
         const userId = answer.user_id;
         if (!userScores[userId]) {
           userScores[userId] = {
             name: answer.profiles.display_name || "Anonymous",
             correct: 0,
-            totalTime: 0
+            totalTime: 0,
+            questionIds: new Set()
           };
         }
-        userScores[userId].correct += 1;
-        userScores[userId].totalTime += answer.time_taken_seconds;
+        
+        // Only count each question once per user (in case of duplicate answers)
+        if (!userScores[userId].questionIds.has(answer.question_id)) {
+          userScores[userId].questionIds.add(answer.question_id);
+          userScores[userId].correct += 1;
+          userScores[userId].totalTime += answer.time_taken_seconds;
+        }
       });
 
       const leaderboardData = Object.entries(userScores)
@@ -103,8 +145,21 @@ const Navbar = () => {
         }));
 
       setLeaderboard(leaderboardData);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading leaderboard:", error);
+      setLeaderboardError(error?.message || "Failed to load leaderboard data");
+      
+      // Retry up to 3 times with exponential backoff if there's a connection issue
+      if (retryCount < 3) {
+        const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        console.log(`Retrying leaderboard load in ${delay}ms (attempt ${retryCount + 1}/3)`);
+        setTimeout(() => loadLeaderboard(retryCount + 1), delay);
+      }
+    } finally {
+      // Only set loading to false if this is the original request or the last retry
+      if (retryCount === 3) {
+        setIsLeaderboardLoading(false);
+      }
     }
   };
 
@@ -218,14 +273,59 @@ const Navbar = () => {
         <div className="border-t terminal-border">
           <div className="container mx-auto px-4 py-4">
             <Card className="terminal-border">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-primary font-display text-lg sm:text-xl">
                   Top 10 Participants
                 </CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    loadLeaderboard();
+                  }}
+                  disabled={isLeaderboardLoading}
+                  className="h-8 w-8 p-0"
+                >
+                  <span className="sr-only">Refresh</span>
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    width="16" 
+                    height="16" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    className={`${isLeaderboardLoading ? 'animate-spin' : ''}`}
+                  >
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                    <path d="M3 21v-5h5" />
+                  </svg>
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {leaderboard.length > 0 ? (
+                  {isLeaderboardLoading ? (
+                    <div className="text-center text-muted-foreground font-mono py-4 text-sm">
+                      Loading leaderboard...
+                    </div>
+                  ) : leaderboardError ? (
+                    <div className="text-center py-4">
+                      <p className="text-red-400 font-mono text-sm mb-2">{leaderboardError}</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => loadLeaderboard()}
+                        className="font-mono text-xs"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  ) : leaderboard.length > 0 ? (
                     leaderboard.map((entry) => (
                       <div key={entry.rank} className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 px-3 bg-muted/50 rounded terminal-border space-y-1 sm:space-y-0">
                         <div className="flex items-center space-x-3">
